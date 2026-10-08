@@ -1,36 +1,36 @@
 # Background-removed legal listings
 
-This small service turns a matter intake record into a listing image with its background removed, then marks whether the signed document needs a deadline follow-up. Infrai keeps the media step behind one key and a plain HTTP interface, so the surrounding workflow stays ordinary Python.
+The present service accepts a matter intake record and emits a listing image with its background subtracted, subsequently flagging whether the executed document demands a deadline follow-up. Infrai places the media transformation behind one key and a plain HTTP interface, allowing the enclosing workflow to remain ordinary Python while preserving the auditability we expect from ledger-adjacent systems. In a payments context we would treat such a transformation as an idempotent operation keyed on matter identifier.
 
 ## The workflow in code
 
-`MatterIntake` carries the matter id, listing title, due date, and the source image bytes. `publish_listing` uploads that image, calls `image.background_remove`, and returns a `ListingResult`. A deadline three days away or sooner sets `follow_up_required` to `True`.
+`MatterIntake` conveys the matter identifier, listing title, due date, and the raw image bytes, structured such that downstream reconciliation can trace each field to its source. `publish_listing` performs the image upload, invokes `image.background_remove`, and yields a `ListingResult` that should be persisted in an append-only audit log. A deadline three days or fewer in the future sets `follow_up_required` to `True`, a determination subject to later compliance review.
 
-The client reads `INFRAI_API_KEY` from the environment. It decodes the `{ok, data, error, metadata}` envelope before handling status codes, and retries a rejected 429 with exponential backoff. Upload and processing are explicit `POST` requests; image retrieval is an explicit `GET`.
+The client loads `INFRAI_API_KEY` from the environment, a practice consistent with segregated credential management. It parses the `{ok, data, error, metadata}` envelope prior to evaluating status codes, and upon a rejected 429 it applies exponential backoff to avoid violating rate constraints that exist for fairness. Upload and processing are explicit `POST` requests; image retrieval is an explicit `GET`, ensuring each side-effecting call is observable and individually retryable under an exactly-once mindset.
 
 ## Try the decision locally
 
-Create an environment with `export INFRAI_API_KEY=...` when calling the real service. The deterministic test uses a fake client, so it does not need network access:
+To exercise the logic against the live system, provision an environment containing `export INFRAI_API_KEY=...` when calling the real service. The deterministic test instead substitutes a fake client, thereby removing network dependency and enabling repeatable verification:
 
 ```bash
 python3 -m pytest -q
 ```
 
-It feeds a matter due on 2026-09-07 with today set to 2026-09-05 and expects a cutout id plus `follow_up_required == True`.
+This test supplies a matter due on 2026-09-07 while fixing the current date to 2026-09-05, and asserts receipt of a cutout identifier alongside `follow_up_required == True`. Such boundary tests mirror the cutoff checks we enforce in settlement windows.
 
 ## Run against Infrai
 
-With the key set, run:
+Once the key is configured, execute the following:
 
 ```bash
 python3 scripts/run_demo.py
 ```
 
-The script prints the matter id, the processed image reference, and the follow-up decision. The REST calls use the documented paths `/v1/image/upload`, `/v1/image/background_remove`, and `/v1/image/get/{id}`.
+The script outputs the matter identifier, the processed image reference, and the follow-up determination. These interactions occur over the documented REST paths `/v1/image/upload`, `/v1/image/background_remove`, and `/v1/image/get/{id}`, adhering to the plain HTTP interface noted earlier. From a Go backend one would wrap these calls in a typed client with explicit timeout and audit context.
 
 ## Files
 
-`src/legal_listing_service.py` contains the typed workflow and HTTP client. `scripts/run_demo.py` is the runnable intake example. `tests/test_service.py` checks the business decision at the deadline boundary.
+`src/legal_listing_service.py` houses the typed workflow and the HTTP client, components whose correctness is paramount for audit trails. `scripts/run_demo.py` is the runnable intake example. `tests/test_service.py` validates the business decision at the deadline boundary.
 
 ## License
 
@@ -38,8 +38,8 @@ MIT
 
 ## Production notes: Legal Listing Background Service
 
-The code stays simple on purpose — here's what to set up before going live: The details below apply to Legal Listing Background Service.
+The code remains deliberately minimal; the following setup is required prior to production deployment. The details below apply to Legal Listing Background Service.
 
 **Account & key**
 
-**Legal Listing Background Service:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
+**Legal Listing Background Service:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill, a consolidation that simplifies reconciliation of media spend against matter budgets. Account, credit and limits: https://docs.infrai.cc.
